@@ -315,9 +315,10 @@ void play_note(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 	long loops;
 	int rc;
 
-	/* Set period size to 32 frames. */
-	frames = 32;
-	snd_pcm_hw_params_set_period_size_near(handle, params, &frames, &dir);
+	snd_pcm_hw_params_get_period_size(params, &frames, &dir);
+	printf("period size = %d frames\n", (int) frames);
+
+	printf(">>> --0 frames: %u \n", frames);
 
 	printf("playing note....\n");
 	/* Use a buffer large enough to hold one period */
@@ -325,16 +326,17 @@ void play_note(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 	size = frames * 4; /* 2 bytes/sample, 2 channels */
 	buffer = (char *) malloc(size);
 
-	printf(">>> --1\n");
+	printf(">>> --1 frames: %u \n", frames);
 
 	/* We want to loop for 5 seconds */
 	snd_pcm_hw_params_get_period_time(*params, &val, &dir);
-	printf(">>> --2\n");
+
+	printf(">>> --2 val : %u\n", val);
 	/* 5 seconds in microseconds divided by
 	 * period time */
 	loops = 5000000 / val;
 
-	printf(">>> --3---: %u\n", loops);
+	printf(">>> --3---loops: %u\n", loops);
 	while (loops > 0) {
 		loops--;
 		printf(">>> --4\n");
@@ -367,9 +369,9 @@ void close_audio(snd_pcm_t **handle) {
 }
 
 int main(int argc, char *argv[]) {
+	/*
 	snd_pcm_t *handle;
 	snd_pcm_hw_params_t *params;
-	int result;
 
 	if(open_audio(&handle, &params) < 0) {
 		printf("Unable to open audio\n");
@@ -381,6 +383,9 @@ int main(int argc, char *argv[]) {
 	play_note(&handle, &params);
 
 	close_audio(&handle);
+	*/
+
+	test_sound();
 
 	return 0;
 }
