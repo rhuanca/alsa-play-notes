@@ -314,6 +314,10 @@ void play_note(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 	long loops;
 	int rc;
 
+	/* Set period size to 32 frames. */
+	frames = 32;
+	snd_pcm_hw_params_set_period_size_near(handle, params, &frames, &dir);
+
 	printf("playing note....\n");
 	/* Use a buffer large enough to hold one period */
 	snd_pcm_hw_params_get_period_size(*params, &frames, &dir);
@@ -329,7 +333,7 @@ void play_note(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 	 * period time */
 	loops = 5000000 / val;
 
-	printf(">>> --3\n");
+	printf(">>> --3---: %u\n", loops);
 	while (loops > 0) {
 		loops--;
 		printf(">>> --4\n");
