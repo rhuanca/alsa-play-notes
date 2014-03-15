@@ -297,6 +297,7 @@ int open_audio(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 
 	/* Write the parameters to the driver */
 	rc = snd_pcm_hw_params(*handle, *params);
+
 	if (rc < 0) {
 		fprintf(stderr, "unable to set hw parameters: %s\n", snd_strerror(rc));
 		return -1;
