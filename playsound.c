@@ -231,7 +231,10 @@ void test_sound() {
 	snd_pcm_hw_params_get_period_time(params, &val, &dir);
 	/* 5 seconds in microseconds divided by
 	 * period time */
+	printf(">>> val: %u\n", val);
 	loops = 5000000 / val;
+
+	printf(">>> loops: %u\n", loops);
 
 	while (loops > 0) {
 		loops--;
@@ -266,7 +269,7 @@ int open_audio(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 	snd_pcm_uframes_t frames;
 
 	/* Open PCM device for playback. */
-	rc = snd_pcm_open(handle, "plughw:", SND_PCM_STREAM_PLAYBACK, 0);
+	rc = snd_pcm_open(handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
 
 
 	if (rc < 0) {
@@ -295,6 +298,10 @@ int open_audio(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 	val = 44100;
 	snd_pcm_hw_params_set_rate_near(*handle, *params, &val, &dir);
 
+	/* Set period size to 32 frames. */
+	frames = 32;
+	snd_pcm_hw_params_set_period_size_near(handle, params, &frames, &dir);
+
 	/* Write the parameters to the driver */
 	rc = snd_pcm_hw_params(*handle, *params);
 
@@ -315,10 +322,8 @@ void play_note(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 	long loops;
 	int rc;
 
-	snd_pcm_hw_params_get_period_size(params, &frames, &dir);
-	printf("period size = %d frames\n", (int) frames);
-
-	printf(">>> --0 frames: %u \n", frames);
+	val = 44100/2;
+	frames = 32;
 
 	printf("playing note....\n");
 	/* Use a buffer large enough to hold one period */
@@ -334,12 +339,11 @@ void play_note(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 	printf(">>> --2 val : %u\n", val);
 	/* 5 seconds in microseconds divided by
 	 * period time */
-	loops = 5000000 / val;
+	loops = 15000000 / val;
 
 	printf(">>> --3---loops: %u\n", loops);
 	while (loops > 0) {
 		loops--;
-		printf(">>> --4\n");
 		rc = read(0, buffer, size);
 		if (rc == 0) {
 			fprintf(stderr, "end of file on input\n");
@@ -369,7 +373,7 @@ void close_audio(snd_pcm_t **handle) {
 }
 
 int main(int argc, char *argv[]) {
-	/*
+
 	snd_pcm_t *handle;
 	snd_pcm_hw_params_t *params;
 
@@ -383,9 +387,9 @@ int main(int argc, char *argv[]) {
 	play_note(&handle, &params);
 
 	close_audio(&handle);
-	*/
 
-	test_sound();
+
+	// test_sound();
 
 	return 0;
 }
