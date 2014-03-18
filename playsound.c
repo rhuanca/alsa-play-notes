@@ -5,67 +5,108 @@
  *      Author: renan
  */
 
-#include <alsa/asoundlib.h>
-#include <alsa/error.h>
-#include <alsa/pcm.h>
-#include <alsa/version.h>
 #include <stdio.h>
-#include <string.h>
 
-int open_audio(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
-	int rc;
+// #define ALSA_PCM_NEW_HW_PARAMS_API
+
+#include <alsa/asoundlib.h>
+
+static snd_pcm_t *handle;
+static snd_pcm_hw_params_t *params;
+static snd_pcm_uframes_t frames;
+
+int dir;
+int rc;
+
+void open_audio() {
+
 	unsigned int rate;
-	int dir;
-	snd_pcm_uframes_t frames;
+
+
+
+
+	printf(">>> 1 - handle: %u\n", handle);
 
 	/* Open PCM device for playback. */
-	rc = snd_pcm_open(handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
+	rc = snd_pcm_open(&handle, "default", SND_PCM_STREAM_PLAYBACK, 0);
+
+	printf(">>> 2 - handle: %u\n", handle);
 
 	if (rc < 0) {
 		fprintf(stderr, "unable to open pcm device: %s\n", snd_strerror(rc));
-		return -1;
+		return;
 	}
 
 	/* Allocate a hardware parameters object. */
-	snd_pcm_hw_params_alloca(params);
+	snd_pcm_hw_params_alloca(&params);
 
 	/* Fill it in with default values. */
-	snd_pcm_hw_params_any(*handle, *params);
+	snd_pcm_hw_params_any(handle, params);
+
+	printf(">>> 3 - handle: %u\n", handle);
 
 	/* Set the desired hardware parameters. */
 
 	/* Interleaved mode */
-	snd_pcm_hw_params_set_access(*handle, *params,
-			SND_PCM_ACCESS_RW_INTERLEAVED);
+	snd_pcm_hw_params_set_access(handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
+
+	printf(">>> 4 - handle: %u\n", handle);
 
 	/* Signed 16-bit little-endian format */
-	snd_pcm_hw_params_set_format(*handle, *params, SND_PCM_FORMAT_S16_LE);
+	rc = snd_pcm_hw_params_set_format(handle, params, SND_PCM_FORMAT_S16_LE);
+	printf(">>> 5 - result: %i\n", rc);
+	printf(">>> 5 - handle: %u\n", handle);
 
 	/* Two channels (stereo) */
-	snd_pcm_hw_params_set_channels(*handle, *params, 1);
+	rc = snd_pcm_hw_params_set_channels(handle, params, 1);
+
+	printf(">>> 6 - result: %i\n", rc);
+	printf(">>> 6 - handle: %u\n", handle);
 
 	/* 44100 bits/second sampling rate (CD quality) */
 	rate = 44100;
-	snd_pcm_hw_params_set_rate_near(*handle, *params, &rate, &dir);
+	rc = snd_pcm_hw_params_set_rate_near(handle, params, &rate, &dir);
+
+	printf(">>> 7 - result: %i\n", rc);
+	printf(">>> 7 - handle: %u\n", handle);
+
+	/* Set period size to 32 frames. */
+	frames = 32;
+	rc = snd_pcm_hw_params_set_period_size_near(handle, params, &frames, &dir);
+	printf(">>> 8 - result: %i\n", rc);
+	printf(">>> 8 - handle: %u\n", handle);
 
 	/* Write the parameters to the driver */
-	rc = snd_pcm_hw_params(*handle, *params);
+	rc = snd_pcm_hw_params(handle, params);
+	printf(">>> 9 - result: %i\n", rc);
+	printf(">>> 9 - handle: %u\n", handle);
+	printf(">>> 9 - params: %u\n", params);
+
+	rc = snd_pcm_hw_params_get_period_size(params, &frames, &dir);
+	printf(">>> XXXXX - frames = %d\n", frames);
 
 	if (rc < 0) {
 		fprintf(stderr, "unable to set hw parameters: %s\n", snd_strerror(rc));
-		return -1;
+		return;
 	}
 
-	return 1;
+	frames = 1;
+	rc = snd_pcm_hw_params_get_period_size(params, &frames, &dir);
+	printf(">>> YYYY - a - frames = %d\n", frames);
+
+	frames = 2;
+	rc = snd_pcm_hw_params_get_period_size(params, &frames, &dir);
+	printf(">>> YYYY - b - frames = %d\n", frames);
+
+	frames = 3;
+	rc = snd_pcm_hw_params_get_period_size(params, &frames, &dir);
+	printf(">>> YYYY - c - frames = %d\n", frames);
+
 }
 
-void play_note(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
-	int dir;
-	snd_pcm_uframes_t frames;
-	printf(">>> *params = %u\n", *params);
-	printf(">>> params = %u\n", params);
-	snd_pcm_hw_params_get_period_size(*params, &frames, &dir);
-	printf("period size = %u frames\n", (int) frames);
+void play_note() {
+	int ret;
+	char *msg;
 
 	/*	snd_pcm_uframes_t frames;
 	 unsigned int val;
@@ -120,29 +161,23 @@ void play_note(snd_pcm_t **handle, snd_pcm_hw_params_t **params) {
 	 */
 }
 
-void close_audio(snd_pcm_t **handle) {
-	snd_pcm_drain(*handle);
-	snd_pcm_close(*handle);
+void close_audio() {
+	snd_pcm_drain(handle);
+	snd_pcm_close(handle);
 	printf("audio close successfully\n");
 }
 
-int main(int argc, char *argv[]) {
+void main(int argc, char *argv[]) {
 
-	snd_pcm_t *handle;
-	snd_pcm_hw_params_t *params;
-
-	if (open_audio(&handle, &params) < 0) {
-		printf("Unable to open audio\n");
-		return -1;
-	}
+	open_audio();
 
 	printf("audio opened successfully\n");
-	play_note(&handle, &params);
 
-	close_audio(&handle);
+	frames = 5;
+	rc = snd_pcm_hw_params_get_period_size(params, &frames, &dir);
+	printf(">>> YYYY - d - frames = %d\n", frames);
 
-	// test_sound();
-
-	return 0;
+	// play_note();
+	//close_audio(&handle);
 }
 
