@@ -5,10 +5,16 @@
  *      Author: renan
  */
 
-#include <stdio.h>
-#include <math.h>
-#include <getopt.h>
 #include <alsa/asoundlib.h>
+#include <asm-generic/errno.h>
+#include <asm-generic/errno-base.h>
+#include <getopt.h>
+#include <math.h>
+#include <poll.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 static char *device = "plughw:0,0"; /* playback device */
 static snd_pcm_format_t format = SND_PCM_FORMAT_S16; /* sample format */
