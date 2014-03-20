@@ -50,8 +50,10 @@ static void set_hardware_parameters(snd_pcm_t *handle,
 void play_note(snd_pcm_t *handle, snd_pcm_hw_params_t *params) {
 	int dir;
 	snd_pcm_uframes_t frames;
+	snd_pcm_uframes_t buffer_size;
 	unsigned int period_time;
 	unsigned int rate;
+	unsigned int periods;
 	char *buffer;
 	int size;
 	int loops;
@@ -59,14 +61,20 @@ void play_note(snd_pcm_t *handle, snd_pcm_hw_params_t *params) {
 
 	snd_pcm_hw_params_get_period_size(params, &frames, &dir);
 	snd_pcm_hw_params_get_period_time(params, &period_time, &dir);
+	snd_pcm_hw_params_get_periods(params, &periods, &dir);
 	snd_pcm_hw_params_get_rate(params, &rate, &dir);
+	snd_pcm_hw_params_get_buffer_size(params, &buffer_size);
 
 	size = frames * 2;
 	buffer = (char *) malloc(size);
 
 	printf("period frames = %i\n", (int)frames);
 	printf("period time = %i\n", period_time);
+	printf("periods = %i\n", periods);
 	printf("rate = %i\n", rate);
+	printf("buffer size = %i\n", (int)buffer_size);
+
+	printf("calculated buffer size = %i\n", size);
 
 	loops = 5000000 / period_time;
 	printf("loops = %i\n", loops);
