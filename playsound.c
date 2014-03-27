@@ -6,6 +6,10 @@
  */
 
 #include <alsa/asoundlib.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
 //#include <string.h>
 
 snd_pcm_uframes_t frames;
@@ -58,6 +62,7 @@ void play_note(snd_pcm_t *handle, snd_pcm_hw_params_t *params) {
 	int size;
 	int loops;
 	int i;
+	int rc;
 
 	snd_pcm_hw_params_get_period_size(params, &frames, &dir);
 	snd_pcm_hw_params_get_period_time(params, &period_time, &dir);
@@ -68,7 +73,7 @@ void play_note(snd_pcm_t *handle, snd_pcm_hw_params_t *params) {
 	size = frames * 2;
 	buffer = (char *) malloc(size);
 
-	printf("period frames = %i\n", (int)frames);
+	printf("frames = %i\n", (int)frames);
 	printf("period time = %i\n", period_time);
 	printf("periods = %i\n", periods);
 	printf("rate = %i\n", rate);
@@ -81,9 +86,26 @@ void play_note(snd_pcm_t *handle, snd_pcm_hw_params_t *params) {
 	while (loops > 0) {
 		loops--;
 		for (i = 0; i < size; i++) {
-			buffer[i] = (char) i;
+			buffer[i] = (char) i*i*i;
 		}
-		snd_pcm_writei(handle, buffer, frames);
+		rc = snd_pcm_writei(handle, buffer, frames);
+		if(rc<0) {
+			printf(">>> rc = %i\n", rc);
+		}
+
+
+	    if (rc == -EPIPE) {
+	      /* EPIPE means underrun */
+	      fprintf(stderr, "underrun occurred\n");
+	      snd_pcm_prepare(handle);
+	    } else if (rc < 0) {
+	      fprintf(stderr,
+	              "error from writei: %s\n",
+	              snd_strerror(rc));
+	    }  else if (rc != (int)frames) {
+	      fprintf(stderr,
+	              "short write, write %d frames\n", rc);
+	    }
 	}
 }
 
