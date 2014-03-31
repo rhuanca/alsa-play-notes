@@ -17,7 +17,6 @@ snd_pcm_sframes_t period_size;
 unsigned int rate = 44100;
 unsigned int period_time = 100000;
 int channels = 1;
-double freq = 440;
 
 static void set_hardware_parameters(snd_pcm_t *handle,
 		snd_pcm_hw_params_t *params) {
@@ -50,7 +49,7 @@ static void set_hardware_parameters(snd_pcm_t *handle,
 }
 
 static void generate_sine(const snd_pcm_channel_area_t *areas,
-		snd_pcm_uframes_t offset, int count, double *_phase) {
+		snd_pcm_uframes_t offset, int count, double *_phase, double freq) {
 	static double max_phase = 2. * M_PI;
 	double phase = *_phase;
 	double step = max_phase * freq / (double) rate;
@@ -133,13 +132,13 @@ static int xrun_recovery(snd_pcm_t *handle, int err) {
 }
 
 
-void write_loop(snd_pcm_t *handle, signed short *samples,
-		snd_pcm_channel_area_t *areas) {
+void play_freq(snd_pcm_t *handle, signed short *samples,
+		snd_pcm_channel_area_t *areas, double freq) {
 	double phase = 0;
 	signed short *ptr;
 	int err, cptr;
 	while (1) {
-		generate_sine(areas, 0, period_size, &phase);
+		generate_sine(areas, 0, period_size, &phase, freq);
 		ptr = samples;
 		cptr = period_size;
 		while (cptr > 0) {
@@ -215,7 +214,7 @@ int main(int argc, char *argv[]) {
 		areas[chn].step = channels * snd_pcm_format_physical_width(format);
 	}
 
-	write_loop(handle, samples, areas);
+	play_freq(handle, samples, areas, freq);
 
 	// play_note(handle, params);
 	// close audio
