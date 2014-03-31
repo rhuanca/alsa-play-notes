@@ -6,19 +6,23 @@
  */
 
 #include <alsa/asoundlib.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
-//#include <string.h>
-
-snd_pcm_uframes_t frames;
+// snd_pcm_uframes_t frames;
+snd_pcm_format_t format = SND_PCM_FORMAT_S16;
+snd_pcm_sframes_t period_size;
+unsigned int rate = 44100; /* 44100 bits/second sampling rate (CD quality) */
+unsigned int period_time = 100000; /* period time in us */
+const int channels = 1;
+double freq = 440;
 
 static void set_hardware_parameters(snd_pcm_t *handle,
 		snd_pcm_hw_params_t *params) {
 	int rc;
 	int dir;
-	unsigned int rate;
+	int size;
 
 	/* Fill it in with default values. */
 	snd_pcm_hw_params_any(handle, params);
@@ -29,18 +33,18 @@ static void set_hardware_parameters(snd_pcm_t *handle,
 	snd_pcm_hw_params_set_access(handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
 
 	/* Signed 16-bit little-endian format */
-	rc = snd_pcm_hw_params_set_format(handle, params, SND_PCM_FORMAT_S16_LE);
+	rc = snd_pcm_hw_params_set_format(handle, params, format);
 
 	/* Two channels (stereo) */
-	rc = snd_pcm_hw_params_set_channels(handle, params, 1);
+	rc = snd_pcm_hw_params_set_channels(handle, params, channels);
 
-	/* 44100 bits/second sampling rate (CD quality) */
-	rate = 44100;
 	rc = snd_pcm_hw_params_set_rate_near(handle, params, &rate, &dir);
 
-	/* Set period size to 32 frames. */
-	frames = 32;
-	rc = snd_pcm_hw_params_set_period_size_near(handle, params, &frames, &dir);
+	snd_pcm_hw_params_set_period_time_near(handle, params, &period_time,
+				&dir);
+
+	snd_pcm_hw_params_get_period_size(params, &size, &dir);
+	period_size = size;
 
 	/* Write the parameters to the driver */
 	rc = snd_pcm_hw_params(handle, params);
@@ -51,62 +55,133 @@ static void set_hardware_parameters(snd_pcm_t *handle,
 	}
 }
 
+
+static void generate_sine(const snd_pcm_channel_area_t *areas,
+		snd_pcm_uframes_t offset, int count, double *_phase) {
+	static double max_phase = 2. * M_PI;
+	double phase = *_phase;
+	double step = max_phase * freq / (double) rate;
+	unsigned char *samples[channels];
+	int steps[channels];
+	unsigned int chn;
+	int format_bits = snd_pcm_format_width(format);
+	unsigned int maxval = (1 << (format_bits - 1)) - 1;
+	int bps = format_bits / 8; /* bytes per sample */
+	int phys_bps = snd_pcm_format_physical_width(format) / 8;
+	int big_endian = snd_pcm_format_big_endian(format) == 1;
+	int to_unsigned = snd_pcm_format_unsigned(format) == 1;
+	int is_float = (format == SND_PCM_FORMAT_FLOAT_LE
+			|| format == SND_PCM_FORMAT_FLOAT_BE);
+	/* verify and prepare the contents of areas */
+	for (chn = 0; chn < channels; chn++) {
+		if ((areas[chn].first % 8) != 0) {
+			printf("areas[%i].first == %i, aborting...\n", chn,
+					areas[chn].first);
+			exit(EXIT_FAILURE);
+		}
+		samples[chn] = /*(signed short *)*/(((unsigned char *) areas[chn].addr)
+				+ (areas[chn].first / 8));
+		if ((areas[chn].step % 16) != 0) {
+			printf("areas[%i].step == %i, aborting...\n", chn, areas[chn].step);
+			exit(EXIT_FAILURE);
+		}
+		steps[chn] = areas[chn].step / 8;
+		samples[chn] += offset * steps[chn];
+	}
+	/* fill the channel areas */
+	while (count-- > 0) {
+		union {
+			float f;
+			int i;
+		} fval;
+		int res, i;
+		if (is_float) {
+			fval.f = sin(phase) * maxval;
+			res = fval.i;
+		} else
+			res = sin(phase) * maxval;
+		if (to_unsigned)
+			res ^= 1U << (format_bits - 1);
+		for (chn = 0; chn < channels; chn++) {
+			/* Generate data in native endian format */
+			if (big_endian) {
+				for (i = 0; i < bps; i++)
+					*(samples[chn] + phys_bps - 1 - i) = (res >> i * 8) & 0xff;
+			} else {
+				for (i = 0; i < bps; i++)
+					*(samples[chn] + i) = (res >> i * 8) & 0xff;
+			}
+			samples[chn] += steps[chn];
+		}
+		phase += step;
+		if (phase >= max_phase)
+			phase -= max_phase;
+	}
+	*_phase = phase;
+}
+
+
+/*
+ * Underrun and suspend recovery
+ */
+static int xrun_recovery(snd_pcm_t *handle, int err) {
+	printf("stream recovery\n");
+	if (err == -EPIPE) { /* under-run */
+		err = snd_pcm_prepare(handle);
+		if (err < 0)
+			printf("Can't recovery from underrun, prepare failed: %s\n",
+					snd_strerror(err));
+		return 0;
+	} else if (err == -ESTRPIPE) {
+		while ((err = snd_pcm_resume(handle)) == -EAGAIN)
+			sleep(1); /* wait until the suspend flag is released */
+		if (err < 0) {
+			err = snd_pcm_prepare(handle);
+			if (err < 0)
+				printf("Can't recovery from suspend, prepare failed: %s\n",
+						snd_strerror(err));
+		}
+		return 0;
+	}
+	return err;
+}
+
+/*
+ * Transfer method - write only
+ */
+static int write_loop(snd_pcm_t *handle, signed short *samples,
+		snd_pcm_channel_area_t *areas) {
+	double phase = 0;
+	signed short *ptr;
+	int err, cptr;
+	while (1) {
+		generate_sine(areas, 0, period_size, &phase);
+		ptr = samples;
+		cptr = period_size;
+		while (cptr > 0) {
+			err = snd_pcm_writei(handle, ptr, cptr);
+			if (err == -EAGAIN)
+				continue;
+			if (err < 0) {
+				if (xrun_recovery(handle, err) < 0) {
+					printf("Write error: %s\n", snd_strerror(err));
+					exit(EXIT_FAILURE);
+				}
+				break; /* skip one period */
+			}
+			ptr += err * channels;
+			cptr -= err;
+		}
+	}
+}
+
 void play_note(snd_pcm_t *handle, snd_pcm_hw_params_t *params) {
 	int dir;
-	snd_pcm_uframes_t frames;
-	snd_pcm_uframes_t buffer_size;
-	unsigned int period_time;
-	unsigned int rate;
-	unsigned int periods;
-	char *buffer;
 	int size;
 	int loops;
 	int i;
 	int rc;
-
-	snd_pcm_hw_params_get_period_size(params, &frames, &dir);
-	snd_pcm_hw_params_get_period_time(params, &period_time, &dir);
-	snd_pcm_hw_params_get_periods(params, &periods, &dir);
-	snd_pcm_hw_params_get_rate(params, &rate, &dir);
-	snd_pcm_hw_params_get_buffer_size(params, &buffer_size);
-
-	size = frames * 2;
-	buffer = (char *) malloc(size);
-
-	printf("frames = %i\n", (int)frames);
-	printf("period time = %i\n", period_time);
-	printf("periods = %i\n", periods);
-	printf("rate = %i\n", rate);
-	printf("buffer size = %i\n", (int)buffer_size);
-
-	printf("calculated buffer size = %i\n", size);
-
-	loops = 5000000 / period_time;
-	printf("loops = %i\n", loops);
-	while (loops > 0) {
-		loops--;
-		for (i = 0; i < size; i++) {
-			buffer[i] = (char) i*i*i;
-		}
-		rc = snd_pcm_writei(handle, buffer, frames);
-		if(rc<0) {
-			printf(">>> rc = %i\n", rc);
-		}
-
-
-	    if (rc == -EPIPE) {
-	      /* EPIPE means underrun */
-	      fprintf(stderr, "underrun occurred\n");
-	      snd_pcm_prepare(handle);
-	    } else if (rc < 0) {
-	      fprintf(stderr,
-	              "error from writei: %s\n",
-	              snd_strerror(rc));
-	    }  else if (rc != (int)frames) {
-	      fprintf(stderr,
-	              "short write, write %d frames\n", rc);
-	    }
-	}
+	/// ooops
 }
 
 void close_audio(snd_pcm_t *handle) {
@@ -119,6 +194,12 @@ int main(int argc, char *argv[]) {
 	int rc;
 	snd_pcm_t *handle;
 	snd_pcm_hw_params_t *params;
+	snd_pcm_channel_area_t *areas;
+	unsigned int chn;
+	signed short *samples;
+	int dir;
+	double phase = 0;
+	double freq = 440;
 
 	// initialize audio
 	rc = snd_pcm_open(&handle, "plughw:0,0", SND_PCM_STREAM_PLAYBACK, 0);
@@ -131,8 +212,28 @@ int main(int argc, char *argv[]) {
 	printf("audio opened successfully\n");
 
 	// run
-	play_note(handle, params);
 
+	samples = malloc(
+			(period_size * channels * snd_pcm_format_physical_width(format))
+					/ 8);
+	if (samples == NULL) {
+		printf("No enough memory\n");
+		exit(EXIT_FAILURE);
+	}
+	areas = calloc(channels, sizeof(snd_pcm_channel_area_t));
+	if (areas == NULL) {
+		printf("No enough memory\n");
+		exit(EXIT_FAILURE);
+	}
+	for (chn = 0; chn < channels; chn++) {
+		areas[chn].addr = samples;
+		areas[chn].first = chn * snd_pcm_format_physical_width(format);
+		areas[chn].step = channels * snd_pcm_format_physical_width(format);
+	}
+
+	write_loop(handle, samples, areas );
+
+	// play_note(handle, params);
 	// close audio
 	close_audio(handle);
 	return 0;
