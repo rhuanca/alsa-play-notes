@@ -9,52 +9,45 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
-// snd_pcm_uframes_t frames;
 snd_pcm_format_t format = SND_PCM_FORMAT_S16;
 snd_pcm_sframes_t period_size;
-unsigned int rate = 44100; /* 44100 bits/second sampling rate (CD quality) */
-unsigned int period_time = 100000; /* period time in us */
-const int channels = 1;
+unsigned int rate = 44100;
+unsigned int period_time = 100000;
+int channels = 1;
 double freq = 440;
 
 static void set_hardware_parameters(snd_pcm_t *handle,
 		snd_pcm_hw_params_t *params) {
 	int rc;
 	int dir;
-	int size;
 
-	/* Fill it in with default values. */
+	// init
 	snd_pcm_hw_params_any(handle, params);
 
-	/* Set the desired hardware parameters. */
-
-	/* Interleaved mode */
+	// set
 	snd_pcm_hw_params_set_access(handle, params, SND_PCM_ACCESS_RW_INTERLEAVED);
 
-	/* Signed 16-bit little-endian format */
 	rc = snd_pcm_hw_params_set_format(handle, params, format);
 
-	/* Two channels (stereo) */
 	rc = snd_pcm_hw_params_set_channels(handle, params, channels);
 
 	rc = snd_pcm_hw_params_set_rate_near(handle, params, &rate, &dir);
 
-	snd_pcm_hw_params_set_period_time_near(handle, params, &period_time,
-				&dir);
+	rc = snd_pcm_hw_params_set_period_time_near(handle, params, &period_time,
+			&dir);
 
-	snd_pcm_hw_params_get_period_size(params, &size, &dir);
-	period_size = size;
+	rc = snd_pcm_hw_params_get_period_size(params, &period_size, &dir);
 
-	/* Write the parameters to the driver */
+	// push
 	rc = snd_pcm_hw_params(handle, params);
-
 	if (rc < 0) {
 		fprintf(stderr, "unable to set hw parameters: %s\n", snd_strerror(rc));
 		return;
 	}
 }
-
 
 static void generate_sine(const snd_pcm_channel_area_t *areas,
 		snd_pcm_uframes_t offset, int count, double *_phase) {
@@ -70,8 +63,7 @@ static void generate_sine(const snd_pcm_channel_area_t *areas,
 	int phys_bps = snd_pcm_format_physical_width(format) / 8;
 	int big_endian = snd_pcm_format_big_endian(format) == 1;
 	int to_unsigned = snd_pcm_format_unsigned(format) == 1;
-	int is_float = (format == SND_PCM_FORMAT_FLOAT_LE
-			|| format == SND_PCM_FORMAT_FLOAT_BE);
+
 	/* verify and prepare the contents of areas */
 	for (chn = 0; chn < channels; chn++) {
 		if ((areas[chn].first % 8) != 0) {
@@ -95,11 +87,9 @@ static void generate_sine(const snd_pcm_channel_area_t *areas,
 			int i;
 		} fval;
 		int res, i;
-		if (is_float) {
-			fval.f = sin(phase) * maxval;
-			res = fval.i;
-		} else
-			res = sin(phase) * maxval;
+
+		res = sin(phase) * maxval;
+
 		if (to_unsigned)
 			res ^= 1U << (format_bits - 1);
 		for (chn = 0; chn < channels; chn++) {
@@ -120,10 +110,6 @@ static void generate_sine(const snd_pcm_channel_area_t *areas,
 	*_phase = phase;
 }
 
-
-/*
- * Underrun and suspend recovery
- */
 static int xrun_recovery(snd_pcm_t *handle, int err) {
 	printf("stream recovery\n");
 	if (err == -EPIPE) { /* under-run */
@@ -146,10 +132,8 @@ static int xrun_recovery(snd_pcm_t *handle, int err) {
 	return err;
 }
 
-/*
- * Transfer method - write only
- */
-static int write_loop(snd_pcm_t *handle, signed short *samples,
+
+void write_loop(snd_pcm_t *handle, signed short *samples,
 		snd_pcm_channel_area_t *areas) {
 	double phase = 0;
 	signed short *ptr;
@@ -231,7 +215,7 @@ int main(int argc, char *argv[]) {
 		areas[chn].step = channels * snd_pcm_format_physical_width(format);
 	}
 
-	write_loop(handle, samples, areas );
+	write_loop(handle, samples, areas);
 
 	// play_note(handle, params);
 	// close audio
