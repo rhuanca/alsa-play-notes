@@ -180,8 +180,7 @@ int main(int argc, char *argv[]) {
 	snd_pcm_channel_area_t *areas;
 	unsigned int chn;
 	signed short *samples;
-	int dir;
-	double phase = 0;
+
 	double freq = 440;
 
 	// initialize audio
@@ -195,10 +194,10 @@ int main(int argc, char *argv[]) {
 	printf("audio opened successfully\n");
 
 	// run
-
 	samples = malloc(
 			(period_size * channels * snd_pcm_format_physical_width(format))
 					/ 8);
+
 	if (samples == NULL) {
 		printf("No enough memory\n");
 		exit(EXIT_FAILURE);
