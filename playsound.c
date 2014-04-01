@@ -137,7 +137,11 @@ void play_freq(snd_pcm_t *handle, signed short *samples,
 	double phase = 0;
 	signed short *ptr;
 	int err, cptr;
-	while (1) {
+	long loops;
+
+	loops = 5000000 / period_time;
+	while (loops > 0) {
+		loops--;
 		generate_sine(areas, 0, period_size, &phase, freq);
 		ptr = samples;
 		cptr = period_size;
@@ -213,7 +217,14 @@ int main(int argc, char *argv[]) {
 		areas[chn].step = channels * snd_pcm_format_physical_width(format);
 	}
 
-	play_freq(handle, samples, areas, freq);
+	play_freq(handle, samples, areas, 220.00); // A
+	play_freq(handle, samples, areas, 246.94); // B
+	play_freq(handle, samples, areas, 261.63); // C
+	play_freq(handle, samples, areas, 293.66); // D
+	play_freq(handle, samples, areas, 329.63); // E
+	play_freq(handle, samples, areas, 349.23); // F
+	play_freq(handle, samples, areas, 392.00); // G
+	play_freq(handle, samples, areas, 440.00); // A
 
 	// play_note(handle, params);
 	// close audio
